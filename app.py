@@ -1,441 +1,516 @@
 import streamlit as st
 import difflib
-import requests
+import pandas as pd
 
-# ===== إعداد الصفحة العامة لستريملت =====
+# ================== إعداد الصفحة العامة ==================
 st.set_page_config(
     page_title="Pharmacy Assistant",
     page_icon="💊",
-    layout="wide"
+    layout="wide",
 )
 
-# ===================== إعداد المستخدمين =====================
+# ================== تنسيق عام للتطبيق (ثيم أبيض) ==================
+APP_CSS = """
+<style>
+/* خلفية التطبيق كاملة */
+.stApp {
+    background: #f5f7fb;
+    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* حاويات عامة */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* عنوان رئيسي */
+.main-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #111827;
+}
+
+/* أنيميشن خفيفة للدخول */
+.fade-in {
+    animation: fadeIn 0.7s ease-out;
+}
+
+@keyframes fadeIn {
+    from {opacity: 0; transform: translateY(8px);}
+    to   {opacity: 1; transform: translateY(0);}
+}
+
+/* كرت تسجيل الدخول */
+.login-card {
+    max-width: 480px;
+    margin: 2.5rem auto;
+    padding: 2.2rem 2rem;
+    background: rgba(255,255,255,0.96);
+    border-radius: 18px;
+    box-shadow: 0 18px 40px rgba(15,23,42,0.18);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(226,232,240,0.9);
+}
+
+/* أزرار */
+.stButton>button {
+    border-radius: 999px;
+    font-weight: 600;
+    padding: 0.5rem 1.6rem;
+    border: none;
+    background: linear-gradient(135deg,#2563eb,#0ea5e9);
+    color: white;
+    box-shadow: 0 10px 25px rgba(37,99,235,0.35);
+}
+.stButton>button:hover {
+    background: linear-gradient(135deg,#1d4ed8,#0284c7);
+}
+
+/* حقول الإدخال */
+.stTextInput>div>div>input,
+.stTextArea>div>div>textarea {
+    background: #f9fafb;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+}
+.stTextInput>div>div>input:focus,
+.stTextArea>div>div>textarea:focus {
+    border: 1px solid #2563eb !important;
+}
+
+/* التبويبات */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.5rem;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 999px;
+    padding: 0.4rem 1.3rem;
+}
+
+/* شريط علوي بسيط للعنوان */
+.page-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.pill-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    background: linear-gradient(135deg,#f97316,#ec4899);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.4rem;
+}
+.page-header-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #111827;
+}
+.page-header-sub {
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+</style>
+"""
+st.markdown(APP_CSS, unsafe_allow_html=True)
+
+# ================== حسابات المستخدمين ==================
 USERS = {
     "admin": {"password": "admin123", "role": "admin"},
     "user1": {"password": "12345", "role": "user"},
 }
 
-# ===================== بيانات الأدوية (حوالي 60 دواء) =====================
+# ================== بيانات الأدوية (حوالي 60 دواء) ==================
 def get_default_medicines():
-    return [
-        {
-            "name": "Paracetamol",
-            "ingredients": "Paracetamol (Acetaminophen)",
-            "benefits": "مسكن للألم وخافض للحرارة.",
-            "side_effects": "غثيان، اضطراب معدي، أذى في الكبد مع الجرعات العالية.",
-            "prescription": False,
-        },
-        {
-            "name": "Ibuprofen",
-            "ingredients": "Ibuprofen",
-            "benefits": "مسكن ألم ومضاد التهاب وخافض حرارة.",
-            "side_effects": "ألم معدة، قرحة معدية، نزيف مع الاستخدام الطويل.",
-            "prescription": False,
-        },
-        {
-            "name": "Aspirin",
-            "ingredients": "Acetylsalicylic acid",
-            "benefits": "مسكن ألم، خافض حرارة، مميع للدم بجرعات معينة.",
-            "side_effects": "اضطراب معدي، نزيف، حساسية عند بعض المرضى.",
-            "prescription": False,
-        },
-        {
-            "name": "Diclofenac",
-            "ingredients": "Diclofenac sodium",
-            "benefits": "مسكن قوي ومضاد التهاب للمفاصل والعضلات.",
-            "side_effects": "ألم معدي، ارتفاع إنزيمات الكبد، قرحة.",
-            "prescription": True,
-        },
-        {
-            "name": "Naproxen",
-            "ingredients": "Naproxen",
-            "benefits": "مسكن ومضاد التهاب للمفاصل والآلام المزمنة.",
-            "side_effects": "اضطرابات هضمية، صداع، دوار.",
-            "prescription": True,
-        },
-        {
-            "name": "Tramadol",
-            "ingredients": "Tramadol hydrochloride",
-            "benefits": "مسكن قوي للآلام المتوسطة إلى الشديدة.",
-            "side_effects": "دوار، نعاس، إدمان عند سوء الاستخدام.",
-            "prescription": True,
-        },
-        {
-            "name": "Codeine",
-            "ingredients": "Codeine phosphate",
-            "benefits": "مسكن للألم ومضاد للسعال.",
-            "side_effects": "إمساك، نعاس، إدمان عند الاستخدام المفرط.",
-            "prescription": True,
-        },
-        {
-            "name": "Amoxicillin",
-            "ingredients": "Amoxicillin",
-            "benefits": "مضاد حيوي واسع الطيف لعلاج التهابات مختلفة.",
-            "side_effects": "إسهال، طفح جلدي، حساسية.",
-            "prescription": True,
-        },
-        {
-            "name": "Azithromycin",
-            "ingredients": "Azithromycin",
-            "benefits": "مضاد حيوي لالتهابات الجهاز التنفسي والجلد.",
-            "side_effects": "غثيان، إسهال، ألم بطن.",
-            "prescription": True,
-        },
-        {
-            "name": "Ciprofloxacin",
-            "ingredients": "Ciprofloxacin",
-            "benefits": "مضاد حيوي لالتهابات البول والجهاز الهضمي.",
-            "side_effects": "غثيان، دوار، تأثير على الأوتار.",
-            "prescription": True,
-        },
-
-        # ==============================  باقي المجموعة ==============================
-        {
-            "name": "Metronidazole",
-            "ingredients": "Metronidazole",
-            "benefits": "لعلاج التهابات الجهاز الهضمي والأسنان.",
-            "side_effects": "طعم معدني، غثيان، صداع.",
-            "prescription": True,
-        },
-        {
-            "name": "Omeprazole",
-            "ingredients": "Omeprazole",
-            "benefits": "يقلل حموضة المعدة ويعالج القرحة.",
-            "side_effects": "صداع، إسهال.",
-            "prescription": False,
-        },
-        {
-            "name": "Pantoprazole",
-            "ingredients": "Pantoprazole",
-            "benefits": "يستخدم لعلاج حموضة المعدة.",
-            "side_effects": "غثيان، انتفاخ.",
-            "prescription": False,
-        },
-        {
-            "name": "Metformin",
-            "ingredients": "Metformin",
-            "benefits": "لعلاج داء السكري النوع الثاني.",
-            "side_effects": "غثيان، إسهال.",
-            "prescription": True,
-        },
-        {
-            "name": "Gliclazide",
-            "ingredients": "Gliclazide",
-            "benefits": "يخفض سكر الدم.",
-            "side_effects": "هبوط سكر.",
-            "prescription": True,
-        },
-        {
-            "name": "Amlodipine",
-            "ingredients": "Amlodipine",
-            "benefits": "لعلاج ارتفاع الضغط.",
-            "side_effects": "تورم القدمين.",
-            "prescription": True,
-        },
-        {
-            "name": "Losartan",
-            "ingredients": "Losartan",
-            "benefits": "لعلاج الضغط وحماية الكلى.",
-            "side_effects": "دوار، ارتفاع بوتاسيوم.",
-            "prescription": True,
-        },
-        {
-            "name": "Lisinopril",
-            "ingredients": "Lisinopril",
-            "benefits": "مخفض للضغط.",
-            "side_effects": "سعال جاف.",
-            "prescription": True,
-        },
-        {
-            "name": "Hydrochlorothiazide",
-            "ingredients": "HCT",
-            "benefits": "مدر للبول لعلاج الضغط.",
-            "side_effects": "نقص بوتاسيوم.",
-            "prescription": True,
-        },
-        {
-            "name": "Furosemide",
-            "ingredients": "Furosemide",
-            "benefits": "مدر قوي.",
-            "side_effects": "جفاف، دوار.",
-            "prescription": True,
-        },
-        {
-            "name": "Cetirizine",
-            "ingredients": "Cetirizine",
-            "benefits": "مضاد حساسية.",
-            "side_effects": "نعاس بسيط.",
-            "prescription": False,
-        },
-        {
-            "name": "Loratadine",
-            "ingredients": "Loratadine",
-            "benefits": "مضاد حساسية بدون نعاس.",
-            "side_effects": "جفاف فم.",
-            "prescription": False,
-        },
-        {
-            "name": "Prednisone",
-            "ingredients": "Prednisone",
-            "benefits": "كورتيزون لعلاج الالتهابات.",
-            "side_effects": "زيادة وزن، ضغط.",
-            "prescription": True,
-        },
-        {
-            "name": "Warfarin",
-            "ingredients": "Warfarin",
-            "benefits": "مميع دم.",
-            "side_effects": "نزيف.",
-            "prescription": True,
-        },
-        {
-            "name": "Clopidogrel",
-            "ingredients": "Clopidogrel",
-            "benefits": "مضاد صفائح.",
-            "side_effects": "نزيف.",
-            "prescription": True,
-        },
-        {
-            "name": "Diazepam",
-            "ingredients": "Diazepam",
-            "benefits": "مهدئ ومرخي عضلات.",
-            "side_effects": "نعاس وإدمان.",
-            "prescription": True,
-        },
-        {
-            "name": "Sertraline",
-            "ingredients": "Sertraline",
-            "benefits": "مضاد اكتئاب.",
-            "side_effects": "غثيان، أرق.",
-            "prescription": True,
-        },
-        {
-            "name": "Fluoxetine",
-            "ingredients": "Fluoxetine",
-            "benefits": "مضاد اكتئاب.",
-            "side_effects": "قلق، غثيان.",
-            "prescription": True,
-        },
-        {
-            "name": "Vitamin D",
-            "ingredients": "Cholecalciferol",
-            "benefits": "علاج نقص فيتامين د.",
-            "side_effects": "آمن غالبًا.",
-            "prescription": False,
-        },
-        {
-            "name": "Folic Acid",
-            "ingredients": "Folic acid",
-            "benefits": "مهم للحوامل وصحة الدم.",
-            "side_effects": "آمن غالبًا.",
-            "prescription": False,
-        },
+    meds = [
+        # name, ingredients, benefits, side_effects, prescription
+        ("Paracetamol", "Acetaminophen",
+         "مسكن للآلام وخافض للحرارة.", "مشاكل كبدية عند الجرعة العالية.", False),
+        ("Ibuprofen", "Ibuprofen",
+         "مسكن للألم، مضاد التهاب، خافض حرارة.", "تهيج معدة، قرحة، مشاكل كلى.", False),
+        ("Aspirin", "Acetylsalicylic acid",
+         "مسكن ومضاد التهاب، ومميع للدم بجرعات صغيرة.", "نزيف معدي، حساسية، قرحة.", True),
+        ("Amoxicillin", "Amoxicillin",
+         "مضاد حيوي لعلاج التهابات مختلفة.", "إسهال، طفح جلدي، حساسية.", True),
+        ("Azithromycin", "Azithromycin",
+         "مضاد حيوي لالتهابات الجهاز التنفسي والجلد.", "غثيان، إسهال، اضطراب كبد.", True),
+        ("Ciprofloxacin", "Ciprofloxacin",
+         "مضاد حيوي واسع الطيف.", "اضطراب معدة، صداع، تهيج أوتار.", True),
+        ("Metformin", "Metformin",
+         "لعلاج السكري النوع الثاني.", "اضطرابات معدية، نقص B12 نادراً.", True),
+        ("Insulin", "Insulin",
+         "تنظيم سكر الدم في السكري.", "هبوط سكر، زيادة وزن.", True),
+        ("Omeprazole", "Omeprazole",
+         "يقلل حموضة المعدة وقرحة المعدة.", "صداع، إسهال، نقص مغنيسيوم مع الاستخدام الطويل.", False),
+        ("Pantoprazole", "Pantoprazole",
+         "يقلل إفراز الحمض لعلاج الارتجاع.", "صداع، ألم بطن.", False),
+        ("Loratadine", "Loratadine",
+         "مضاد هيستامين للحساسية.", "نعاس بسيط، جفاف فم.", False),
+        ("Cetirizine", "Cetirizine",
+         "مضاد هيستامين فعال للحساسية.", "نعاس، جفاف فم.", False),
+        ("Prednisone", "Prednisone",
+         "ستيرويد لعلاج الالتهابات الشديدة.", "زيادة وزن، ارتفاع ضغط، هشاشة عظام.", True),
+        ("Hydrocortisone cream", "Hydrocortisone",
+         "كريم موضعي لعلاج الحكة والالتهاب الجلدي.", "ترقق جلد مع الاستخدام الطويل.", False),
+        ("Salbutamol inhaler", "Salbutamol",
+         "يوسع القصبات في الربو.", "رجفة، خفقان قلب.", True),
+        ("Fluticasone inhaler", "Fluticasone",
+         "كورتيزون استنشاقي للربو المزمن.", "بحة صوت، فطريات فم إذا لم يتم المضمضة.", True),
+        ("Atorvastatin", "Atorvastatin",
+         "يخفض الكوليسترول.", "ألم عضلات، اضطراب كبد.", True),
+        ("Simvastatin", "Simvastatin",
+         "تخفيض الدهون في الدم.", "ألم عضلات، اضطراب كبد.", True),
+        ("Losartan", "Losartan",
+         "لعلاج ارتفاع ضغط الدم.", "دوخة، ارتفاع بوتاسيوم.", True),
+        ("Amlodipine", "Amlodipine",
+         "موسع أوعية لارتفاع الضغط والذبحة.", "تورم كاحل، صداع.", True),
+        ("Enalapril", "Enalapril",
+         "ACE inhibitor لعلاج الضغط وفشل القلب.", "كحة جافة، ارتفاع بوتاسيوم.", True),
+        ("Furosemide", "Furosemide",
+         "مدر بول لعلاج احتباس السوائل.", "جفاف، نقص بوتاسيوم.", True),
+        ("Hydrochlorothiazide", "Hydrochlorothiazide",
+         "مدر بول خفيف للضغط.", "اضطراب أملاح، زيادة سكر الدم.", True),
+        ("Warfarin", "Warfarin",
+         "مضاد تخثر لمنع الجلطات.", "نزيف خطير إذا ارتفعت الجرعة.", True),
+        ("Clopidogrel", "Clopidogrel",
+         "مضاد صفائح لمنع جلطة قلب/دماغ.", "نزيف، كدمات.", True),
+        ("Diazepam", "Diazepam",
+         "مهدئ ومرخي عضلات.", "نعاس شديد، إدمان.", True),
+        ("Sertraline", "Sertraline",
+         "مضاد اكتئاب من نوع SSRI.", "غثيان، أرق، ضعف جنسي.", True),
+        ("Fluoxetine", "Fluoxetine",
+         "مضاد اكتئاب يستخدم أيضاً للوسواس.", "أرق، فقدان شهية.", True),
+        ("Vitamin D", "Cholecalciferol",
+         "تعويض نقص فيتامين د.", "فرط كالسيوم نادراً مع الجرعات العالية.", False),
+        ("Folic Acid", "Folic acid",
+         "لعلاج ومنع فقر الدم بنقص الفوليك.", "نادراً غثيان بسيط.", False),
+        ("Iron tablets", "Ferrous sulfate",
+         "علاج فقر الدم بنقص الحديد.", "إمساك، تغير لون البراز.", False),
+        ("Calcium tablets", "Calcium carbonate",
+         "تقوية العظام ونقص الكالسيوم.", "إمساك، حصى كلى بجرعة عالية.", False),
+        ("Levothyroxine", "Levothyroxine",
+         "لعلاج قصور الغدة الدرقية.", "خفقان، فقدان وزن عند زيادة الجرعة.", True),
+        ("Methimazole", "Methimazole",
+         "لعلاج فرط نشاط الغدة الدرقية.", "نقص كريات دم، طفح جلدي.", True),
+        ("Metoclopramide", "Metoclopramide",
+         "لعلاج الغثيان والقيء.", "نعاس، اضطرابات حركية نادرة.", True),
+        ("Ondansetron", "Ondansetron",
+         "مضاد قوي للغثيان خاصة مع العلاج الكيماوي.", "إمساك، صداع.", True),
+        ("Loperamide", "Loperamide",
+         "يقلل الإسهال الحاد.", "إمساك، مغص.", False),
+        ("ORS", "Glucose + electrolytes",
+         "محلول تعويض أملاح في الإسهال.", "آمن غالباً.", False),
+        ("Diclofenac", "Diclofenac",
+         "مسكن قوي ومضاد التهاب.", "قرحة معدة، مشاكل كلى.", True),
+        ("Naproxen", "Naproxen",
+         "مسكن ومضاد التهاب للألم المزمن.", "تهيج معدة، نزيف.", True),
+        ("Tramadol", "Tramadol",
+         "مسكن أفيوني متوسط الشدة.", "دوخة، إدمان، تشنجات بجرعة عالية.", True),
+        ("Morphine", "Morphine",
+         "مسكن أفيوني قوي للألم الشديد.", "اكتئاب تنفسي، إدمان.", True),
+        ("Saline nasal spray", "Sodium chloride",
+         "ترطيب الأنف وعلاج الجفاف.", "آمن غالباً.", False),
+        ("Chlorhexidine mouthwash", "Chlorhexidine",
+         "غسول فم مطهر.", "تصبغ أسنان مؤقت، طعم مر.", False),
+        ("Guaifenesin syrup", "Guaifenesin",
+         "طارد للبلغم في الكحة الرطبة.", "غثيان بسيط.", False),
+        ("Dextromethorphan", "Dextromethorphan",
+         "مضاد سعال للكحة الجافة.", "دوخة، نعاس.", False),
+        ("Insulin glargine", "Insulin glargine",
+         "أنسولين طويل المفعول.", "هبوط سكر، زيادة وزن.", True),
+        ("Insulin lispro", "Insulin lispro",
+         "أنسولين سريع المفعول.", "هبوط سكر.", True),
+        ("Ranitidine", "Ranitidine",
+         "لتقليل حموضة المعدة (أوقف في دول كثيرة).", "صداع، إسهال.", True),
+        ("Spironolactone", "Spironolactone",
+         "مدر بول يحافظ على البوتاسيوم.", "ارتفاع بوتاسيوم، تضخم ثدي.", True),
+        ("Magnesium oxide", "Magnesium oxide",
+         "لعلاج نقص المغنيسيوم والإمساك أحياناً.", "إسهال.", False),
+        ("Zinc tablets", "Zinc",
+         "دعم المناعة وتحسين التئام الجروح.", "غثيان خفيف.", False),
+        ("Multivitamin", "Vitamins + minerals",
+         "تعويض نقص الفيتامينات.", "غثيان خفيف، بول غامق.", False),
     ]
 
-
-# ===================== دوال الذكاء البسيط =====================
-def score_medicine(m, query_lower: str) -> int:
-    all_text = f"{m['name']} {m['ingredients']} {m['benefits']} {m['side_effects']}".lower()
-    words = [w for w in query_lower.split() if len(w) >= 3]
-    score = 0
-    for w in words:
-        if w in all_text:
-            score += 1
-    return score
-
-
-def format_answer(m):
-    base = (
-        f"اسم الدواء: {m['name']}\n\n"
-        f"المكونات:\n{m['ingredients']}\n\n"
-        f"الفوائد:\n{m['benefits']}\n\n"
-        f"الأعراض الجانبية:\n{m['side_effects']}"
-    )
-    if m["prescription"]:
-        warning = "\n\n⚠️ هذا الدواء يتطلب وصفة طبية."
-    else:
-        warning = "\n\nℹ️ يُصرف بدون وصفة."
-    return base + warning
+    records = []
+    for name, ing, ben, se, rx in meds:
+        records.append(
+            {
+                "Name": name,
+                "Ingredients": ing,
+                "Benefits": ben,
+                "Side Effects": se,
+                "Prescription": "نعم" if rx else "لا",
+            }
+        )
+    return records
 
 
-def is_greeting(text: str) -> bool:
-    t = text.lower().strip()
-    G = ["السلام عليكم", "مرحبا", "هلا", "اهلا", "hi", "hello", "hey"]
-    return any(g in t for g in G)
-
-
-def is_thanks(text: str) -> bool:
-    t = text.lower().strip()
-    T = ["شكرا", "شكراً", "thanks", "thank you"]
-    return any(x in t for x in T)
-
-
-def find_closest_medicine_by_name(text: str, medicines):
-    t = text.lower()
-    words = [w for w in t.split() if len(w) >= 3]
-    best_ratio, best_med, best_word = 0, None, None
-
-    for w in words:
-        for m in medicines:
-            ratio = difflib.SequenceMatcher(None, w, m["name"].lower()).ratio()
-            if ratio > best_ratio:
-                best_ratio, best_med, best_word = ratio, m, w
-
-    if best_ratio >= 0.75:
-        return best_med, best_word, best_ratio
-
-    return None, None, None
-
-
-def ask_ai(text, medicines):
-    lower = text.lower().strip()
-
-    # ترحيب
-    if is_greeting(lower):
-        return "وعليكم السلام 😊 كيف أقدر أساعدك؟"
-
-    # شكر
-    if is_thanks(lower):
-        return "العفو 🌟 هذا واجبي!"
-
-    # تصحيح اسم دواء
-    guessed, wrong, r = find_closest_medicine_by_name(lower, medicines)
-    if guessed:
-        return f"هل تقصد **{guessed['name']}**؟ (تشابه {int(r*100)}%)\n\n" + format_answer(guessed)
-
-    # بحث مبسط
-    best_score, best_med = 0, None
-    for m in medicines:
-        s = score_medicine(m, lower)
-        if s > best_score:
-            best_score, best_med = s, m
-
-    if best_med and best_score > 0:
-        return "أقرب دواء لسؤالك هو:\n\n" + format_answer(best_med)
-
-    return "لم أفهم سؤالك، جرب تكتب اسم الدواء أو المشكلة الصحية 👍"
-
-
-# ===================== الجلسة =====================
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user" not in st.session_state:
-    st.session_state.user = None
+# ================== تهيئة session_state ==================
 if "medicines" not in st.session_state:
     st.session_state.medicines = get_default_medicines()
-if "chat" not in st.session_state:
-    st.session_state.chat = []
 
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-# ===================== تسجيل الدخول =====================
-def login_page():
-    st.title("💊 تسجيل الدخول")
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []  # للشات العام
 
-    username = st.text_input("اسم المستخدم")
-    password = st.text_input("كلمة المرور", type="password")
+# ================== منطق الذكاء البسيط ==================
+GREETINGS = ["hi", "hello", "hey", "السلام", "مرحبا", "اهلا", "هلا"]
 
-    if st.button("دخول"):
-        if username in USERS and USERS[username]["password"] == password:
-            st.session_state.logged_in = True
-            st.session_state.user = USERS[username]
-            st.success("تم تسجيل الدخول بنجاح ✔")
-            st.experimental_rerun()
+def is_greeting(text: str) -> bool:
+    t = text.lower()
+    return any(g in t for g in GREETINGS)
+
+def find_medicine_by_name(name: str):
+    names = [m["Name"] for m in st.session_state.medicines]
+    match = difflib.get_close_matches(name, names, n=1, cutoff=0.7)
+    if match:
+        for m in st.session_state.medicines:
+            if m["Name"] == match[0]:
+                return m, match[0]
+    return None, None
+
+def ai_answer(question: str) -> str:
+    q_lower = question.lower().strip()
+
+    # 1) رسائل الترحيب
+    if is_greeting(q_lower):
+        return (
+            "أهلاً وسهلاً 👋\n\n"
+            "أنا مساعد الصيدلية الذكي. يمكنك سؤالي عن:\n"
+            "- استخدامات دواء معيّن\n"
+            "- الأعراض الجانبية\n"
+            "- اقتراح دواء بناءً على المكونات\n"
+            "مع ملاحظة: هذه المعلومات للتثقيف فقط وليست بديلاً عن استشارة الطبيب."
+        )
+
+    # 2) محاولة معرفة اسم دواء مذكور في السؤال
+    names = [m["Name"] for m in st.session_state.medicines]
+    best = difflib.get_close_matches(question, names, n=1, cutoff=0.8)
+    if best:
+        med, _ = find_medicine_by_name(best[0])
+        if med:
+            return format_medicine_answer(med)
+
+    # 3) تجربة استخراج كلمة تشبه اسم دواء من الجملة
+    words = [w for w in q_lower.replace(",", " ").split() if len(w) > 3]
+    best_med = None
+    best_score = 0.0
+    best_correct_name = None
+
+    for w in words:
+        med, correct = find_medicine_by_name(w)
+        if med:
+            score = difflib.SequenceMatcher(None, w.lower(), correct.lower()).ratio()
+            if score > best_score:
+                best_score = score
+                best_med = med
+                best_correct_name = correct
+
+    if best_med:
+        if best_score < 0.95:
+            return (
+                f"أظن أنك تقصد الدواء: **{best_correct_name}** 🤔\n\n"
+                + format_medicine_answer(best_med)
+            )
         else:
-            st.error("❌ معلومات غير صحيحة")
+            return format_medicine_answer(best_med)
+
+    return (
+        "لم أجد دواءً مطابقاً في قاعدة البيانات الحالية.\n"
+        "جرّب أن تكتب اسم الدواء بالإنجليزية أو جزءاً من اسمه، "
+        "أو اسأل عن الأعراض الجانبية لدواء محدد."
+    )
+
+def format_medicine_answer(med: dict) -> str:
+    return (
+        f"**اسم الدواء:** {med['Name']}\n\n"
+        f"**المكونات:** {med['Ingredients']}\n\n"
+        f"**الفوائد / الاستخدامات:**\n{med['Benefits']}\n\n"
+        f"**الأعراض الجانبية:**\n{med['Side Effects']}\n\n"
+        f"**يحتاج وصفة طبية؟** {med['Prescription']}"
+    )
 
 
-# ===================== التطبيق الرئيسي =====================
-def main_app():
-    st.title("💊 Pharmacy Assistant – مساعد الصيدلية")
+# ================== صفحة تسجيل الدخول ==================
+def login_page():
+    left, right = st.columns([1.1, 1])
 
-    user = st.session_state.user
-    meds = st.session_state.medicines
+    with left:
+        st.markdown(
+            """
+            <div class="login-card fade-in">
+                <div class="page-header">
+                    <div class="pill-logo">💊</div>
+                    <div>
+                        <div class="page-header-title">تسجيل الدخول</div>
+                        <div class="page-header-sub">مساعد الصيدلية الذكي لمشروعك الجامعي</div>
+                    </div>
+                </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    tab1, tab2, tab3 = st.tabs(["📋 قائمة الأدوية", "🤖 مساعد الذكاء", "🛠️ إدارة الأدمن"])
+        username = st.text_input("اسم المستخدم", key="login_username")
+        password = st.text_input("كلمة المرور", type="password", key="login_password")
 
-    # -------- tab 1 --------
-    with tab1:
-        st.subheader("قائمة الأدوية")
-        show_rx = st.checkbox("عرض الأدوية ذات الوصفة الطبية فقط")
+        login_btn = st.button("دخول", use_container_width=True)
 
-        data = []
-        for m in meds:
-            if show_rx and not m["prescription"]:
-                continue
-            data.append({
-                "Name": m["name"],
-                "Ingredients": m["ingredients"],
-                "Benefits": m["benefits"],
-                "Side Effects": m["side_effects"],
-                "Prescription": "⚠️ نعم" if m["prescription"] else "لا"
-            })
+        if "login_message" not in st.session_state:
+            st.session_state.login_message = ""
 
-        st.dataframe(data)
-
-    # -------- tab 2 --------
-    with tab2:
-        st.subheader("🤖 اسأل مساعد الصيدلية")
-
-        for sender, msg in st.session_state.chat:
-            if sender == "user":
-                st.markdown(f"🧑 **أنت:** {msg}")
+        if login_btn:
+            user = USERS.get(username)
+            if user and user["password"] == password:
+                st.session_state.user = {
+                    "username": username,
+                    "role": user.get("role", "user"),
+                }
+                st.session_state.login_message = "تم تسجيل الدخول بنجاح ✔"
+                st.success(st.session_state.login_message)
+                st.rerun()
             else:
-                st.markdown(f"🤖 **المساعد:** {msg}")
+                st.session_state.login_message = "❌ اسم المستخدم أو كلمة المرور غير صحيحة"
+                st.error(st.session_state.login_message)
 
-        message = st.text_input("اكتب سؤالك:")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
-        if col1.button("إرسال"):
-            if message.strip():
-                st.session_state.chat.append(("user", message))
-                answer = ask_ai(message, meds)
-                st.session_state.chat.append(("bot", answer))
-                st.experimental_rerun()
-        if col2.button("مسح المحادثة"):
-            st.session_state.chat = []
-            st.experimental_rerun()
+    with right:
+        st.markdown("<div class='fade-in'>", unsafe_allow_html=True)
+        st.markdown("### ")
+        st.image(
+            "https://img.lovepik.com/photo/48010/7998.jpg_wh860.jpg",
+            caption="Pharmacy Assistant • Smart Medicine Helper",
+            use_column_width=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # -------- tab 3 --------
+
+# ================== التطبيق الرئيسي بعد تسجيل الدخول ==================
+def main_app(user: dict):
+    st.markdown('<div class="fade-in">', unsafe_allow_html=True)
+
+    # هيدر علوي
+    st.markdown(
+        f"""
+        <div class="page-header">
+            <div class="pill-logo">💊</div>
+            <div>
+                <div class="page-header-title">مساعد الصيدلية الذكي</div>
+                <div class="page-header-sub">
+                    مرحباً {user.get("username","")} – الدور: {"أدمن" if user.get("role")=="admin" else "مستخدم عادي"}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tab1, tab2, tab3 = st.tabs(["📋 قائمة الأدوية", "🤖 مساعد الذكاء", "💬 شات عام"])
+
+    # ============ التبويب 1: جدول الأدوية ============
+    with tab1:
+        st.subheader("قائمة الأدوية المتوفرة")
+
+        df = pd.DataFrame(st.session_state.medicines)
+
+        show_rx_only = st.checkbox("عرض الأدوية الموصوفة للطبيب فقط")
+        if show_rx_only:
+            df_show = df[df["Prescription"] == "نعم"]
+        else:
+            df_show = df
+
+        st.dataframe(df_show, use_container_width=True, height=460)
+
+        # قسم خاص بالأدمن فقط لإضافة دواء جديد
+        if user.get("role") == "admin":
+            st.markdown("---")
+            st.markdown("#### إضافة دواء جديد (أدمن فقط)")
+            with st.form("add_medicine_form"):
+                name = st.text_input("اسم الدواء بالإنجليزية")
+                ing = st.text_input("المكونات")
+                ben = st.text_area("الفوائد / الاستخدامات")
+                se = st.text_area("الأعراض الجانبية")
+                rx_flag = st.checkbox("يحتاج وصفة طبية؟")
+                submitted = st.form_submit_button("إضافة الدواء")
+
+            if submitted:
+                if not name.strip():
+                    st.error("يجب إدخال اسم الدواء.")
+                else:
+                    st.session_state.medicines.append(
+                        {
+                            "Name": name.strip(),
+                            "Ingredients": ing.strip(),
+                            "Benefits": ben.strip(),
+                            "Side Effects": se.strip(),
+                            "Prescription": "نعم" if rx_flag else "لا",
+                        }
+                    )
+                    st.success(f"تمت إضافة الدواء: {name}")
+                    st.rerun()
+
+    # ============ التبويب 2: AI Assistant ============
+    with tab2:
+        st.subheader("مساعد الذكاء الخاص بالأدوية")
+
+        user_q = st.text_input(
+            "اسأل عن دواء، جرعة عامة، أو أعراض جانبية (المعلومات تثقيفية فقط):",
+            key="ai_question",
+        )
+
+        if st.button("اسأل الذكاء 🤖", key="ai_btn"):
+            if not user_q.strip():
+                st.warning("اكتب سؤالاً أولاً.")
+            else:
+                answer = ai_answer(user_q)
+                st.markdown("#### الرد:")
+                st.markdown(answer)
+
+    # ============ التبويب 3: شات عام ============
     with tab3:
-        if not user["admin"]:
-            st.error("❌ هذه الصفحة للأدمن فقط")
-            return
+        st.subheader("شات عام بين مستخدمي النظام")
 
-        st.subheader("🛠️ إدارة الأدوية")
+        for msg_user, msg_text in st.session_state.chat_history:
+            st.markdown(f"**{msg_user}:** {msg_text}")
 
-        st.markdown("### إضافة دواء جديد")
-        with st.form("add_med"):
-            name = st.text_input("اسم الدواء")
-            ing = st.text_input("المكونات")
-            ben = st.text_area("الفوائد")
-            se = st.text_area("الأعراض الجانبية")
-            rx = st.checkbox("يحتاج وصفة طبية؟")
-            submit = st.form_submit_button("إضافة")
-            if submit:
-                st.session_state.medicines.append({
-                    "name": name,
-                    "ingredients": ing,
-                    "benefits": ben,
-                    "side_effects": se,
-                    "prescription": rx,
-                })
-                st.success("✔ تم الإضافة")
-                st.experimental_rerun()
+        new_msg = st.text_area("اكتب رسالة جديدة:", key="chat_input")
+        if st.button("إرسال", key="chat_send"):
+            if new_msg.strip():
+                st.session_state.chat_history.append(
+                    (user.get("username", "مستخدم"), new_msg.strip())
+                )
+                st.rerun()
+            else:
+                st.warning("الرسالة فارغة.")
 
-        st.markdown("---")
-
-        st.markdown("### حذف دواء")
-        names = [m["name"] for m in meds]
-        selected = st.selectbox("اختر دواء:", names)
-        if st.button("حذف"):
-            idx = names.index(selected)
-            del st.session_state.medicines[idx]
-            st.success("✔ تم الحذف")
-            st.experimental_rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ===================== تشغيل =====================
-if not st.session_state.logged_in:
-    login_page()
-else:
-    main_app()
+# ================== نقطة التشغيل ==================
+def main():
+    user = st.session_state.user
+    if user is None:
+        login_page()
+    else:
+        # زر تسجيل خروج صغير في الشريط الجانبي
+        with st.sidebar:
+            st.markdown("### الحساب")
+            st.write(f"المستخدم: {user.get('username')}")
+            st.write(f"الدور: {'أدمن' if user.get('role')=='admin' else 'مستخدم'}")
+            if st.button("تسجيل الخروج"):
+                st.session_state.user = None
+                st.rerun()
+
+        main_app(user)
+
+
+if __name__ == "__main__":
+    main()
